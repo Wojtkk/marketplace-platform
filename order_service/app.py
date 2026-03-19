@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from shared.kafka_client import KafkaProducer
 from shared.models import OrderStatus, KafkaEvent, OrderDTO
-from order_service.models import Base, Order, OrderItem, OrderStatusHistory
+from order_service.models import Base, Order, OrderItem, OrderStatusHistory, OrderReturn
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +237,79 @@ def cancel_order(
 
     logger.info("Order %s cancelled", order_id)
     return {"id": str(order.id), "status": "cancelled"}
+
+
+@app.post("/orders/{order_id}/return")
+def return_order(
+    order_id: UUID,
+    return_data: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.status != OrderStatus.DELIVERED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot return order in status {order.status.value}",
+        )
+
+    reason = return_data.get("reason", "")
+    refund_amount = return_data.get("refund_amount", order.total_amount)
+
+    order_return = OrderReturn(
+        order_id=order.id,
+        reason=reason,
+        refund_amount=refund_amount,
+    )
+    db.add(order_return)
+
+    record_status_change(db, order, OrderStatus.CANCELLED, changed_by="return-request")
+    db.commit()
+
+    # Cross-repo: request refund from payment service
+    try:
+        refund_response = requests.post(
+            f"{PAYMENT_SERVICE_URL}/payments/refund",
+            json={
+                "order_id": str(order.id),
+                "amount": refund_amount,
+                "reason": reason,
+            },
+            timeout=15,
+        )
+        refund_response.raise_for_status()
+    except requests.RequestException as e:
+        logger.error("Refund request failed for order %s: %s", order_id, e)
+
+    # Cross-repo: restock items via catalog service
+    for item in order.items:
+        try:
+            requests.put(
+                f"{CATALOG_SERVICE_URL}/products/{item.product_id}/restock",
+                json={"quantity": item.quantity},
+                timeout=10,
+            )
+        except requests.RequestException as e:
+            logger.error("Restock failed for product %s: %s", item.product_id, e)
+
+    kafka_producer.publish_dict(
+        topic="order.returned",
+        payload={
+            "order_id": str(order.id),
+            "refund_amount": refund_amount,
+            "reason": reason,
+        },
+        source_service="order-service",
+    )
+
+    return {
+        "id": str(order_return.id),
+        "order_id": str(order.id),
+        "status": "return_initiated",
+        "refund_amount": refund_amount,
+    }
 
 
 @app.get("/health")

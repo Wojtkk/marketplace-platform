@@ -75,3 +75,20 @@ class OrderStatusHistory(Base):
     changed_by = Column(String(255), nullable=True)
 
     order = relationship("Order", back_populates="status_history")
+
+
+class OrderReturn(Base):
+    __tablename__ = "order_returns"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    reason = Column(String(1000), nullable=False)
+    refund_amount = Column(Float, nullable=False)
+    status = Column(String(50), nullable=False, default="pending")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    order = relationship("Order")

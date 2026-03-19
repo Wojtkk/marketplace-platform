@@ -133,6 +133,46 @@ def update_product_stock(
     }
 
 
+@app.put("/products/{product_id}/restock")
+def restock_product(
+    product_id: UUID,
+    restock_data: dict[str, int],
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    quantity = restock_data.get("quantity", 0)
+    if quantity <= 0:
+        raise HTTPException(status_code=422, detail="Invalid restock quantity")
+
+    product = get_product_by_id(db, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    new_stock = product.stock_quantity + quantity
+    updated = update_stock(db, product_id, new_stock)
+    logger.info("Restocked product %s: +%d (now %d)", product_id, quantity, new_stock)
+    return {
+        "id": str(updated.id),
+        "stock_quantity": updated.stock_quantity,
+        "restocked": quantity,
+        "status": "restocked",
+    }
+
+
+@app.delete("/products/{product_id}")
+def delete_product(
+    product_id: UUID,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from catalog_service.models import Product
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    db.delete(product)
+    db.commit()
+    logger.info("Deleted product %s", product_id)
+    return {"id": str(product_id), "status": "deleted"}
+
+
 @app.get("/categories")
 def list_categories(db: Session = Depends(get_db)) -> dict[str, Any]:
     categories = get_categories(db)
