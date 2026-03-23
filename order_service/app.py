@@ -79,7 +79,8 @@ def record_status_change(
 
 
 @app.post("/orders")
-def create_order(
+def create_order(  # Modified: added input validation
+
     order_data: dict[str, Any],
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:

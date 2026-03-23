@@ -1,0 +1,14 @@
+name: Blast Radius
+on:
+  pull_request:
+jobs:
+  blast-radius:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: useparadigm/blast-radius-action@v1
+        with:
+          github-token: ${{ secrets.PARADIGM_PAT }}
+          project: "test2"
+          api-url: "https://corned-whackiest-bee.ngrok-free.dev"
