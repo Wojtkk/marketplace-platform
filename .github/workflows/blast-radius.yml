@@ -5,13 +5,10 @@ jobs:
   blast-radius:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       pull-requests: write
-      issues: write
     steps:
-      - uses: actions/checkout@v4
       - uses: useparadigm/blast-radius-action@v1
         with:
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ secrets.PARADIGM_PAT }}
           project: "test2"
-          paradigm-api-url: "https://corned-whackiest-bee.ngrok-free.dev/mcp"
+          api-url: "https://corned-whackiest-bee.ngrok-free.dev"
